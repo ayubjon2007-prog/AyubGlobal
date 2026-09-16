@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="uz">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AyubGlobal</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:Arial,sans-serif;background:#07111f;color:#fff}
+.app{max-width:700px;margin:auto;min-height:100vh;background:#07111f}
+header{padding:18px;display:flex;justify-content:space-between;align-items:center;background:#09192b}
+.logo{font-size:25px;font-weight:800}.sub{color:#91a8bf;font-size:13px;margin-top:4px}
+.search{margin:14px;padding:13px 15px;border-radius:12px;border:1px solid #27435f;background:#10243a;color:white;width:calc(100% - 28px)}
+#map{height:560px;width:100%}
+.panel{padding:15px;background:#0b1b2d}
+button{border:0;border-radius:11px;padding:12px 15px;background:#1683ff;color:white;font-weight:700;cursor:pointer}
+#status{margin-top:10px;color:#a9bbcf;font-size:14px}
+.place{margin-top:10px;padding:13px;background:#10243a;border:1px solid #27435f;border-radius:12px}
+</style>
+</head>
+<body>
+<div class="app">
+<header><div><div class="logo">🌍 AyubGlobal</div><div class="sub">Dunyo bo‘ylab borgan joylaringiz</div></div><div>📍</div></header>
+<input id="search" class="search" placeholder="Davlat yoki shahar qidiring...">
+<div id="map"></div>
+<div class="panel">
+<button id="locate">📍 Mening joylashuvim</button>
+<div id="status">Xaritadagi istalgan joyni bosib, uni borgan joyingiz sifatida belgilashingiz mumkin.</div>
+<div id="place" class="place" style="display:none"></div>
+</div>
+</div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const map=L.map('map').setView([41.3775,64.5853],5);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+ maxZoom:19,attribution:'© OpenStreetMap contributors'
+}).addTo(map);
+
+const saved=JSON.parse(localStorage.getItem('ayubglobal_places')||'[]');
+saved.forEach(p=>addSavedMarker(p));
+
+function addSavedMarker(p){
+ const m=L.marker([p.lat,p.lon]).addTo(map);
+ m.bindPopup('📍 <b>'+escapeHtml(p.name||'Borgan joy')+'</b><br>'+escapeHtml(p.country||'')+
+ (p.city?'<br>'+escapeHtml(p.city):''));
+}
+function escapeHtml(s){return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+
+async function reverse(lat,lon){
+ try{
+  const r=await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}&accept-language=uz`);
+  const d=await r.json(), a=d.address||{};
+  const country=a.country||'', city=a.city||a.town||a.village||a.municipality||'';
+  return {name:d.display_name||city||country,city,country};
+ }catch(e){return {name:'Tanlangan joy',city:'',country:''}}
+}
+async function choose(lat,lon){
+ document.getElementById('status').textContent='Joy aniqlanmoqda...';
+ const p=await reverse(lat,lon);
+ const item={lat,lon,...p};
+ saved.push(item);localStorage.setItem('ayubglobal_places',JSON.stringify(saved));
+ addSavedMarker(item);
+ document.getElementById('place').style.display='block';
+ document.getElementById('place').innerHTML='📍 <b>'+escapeHtml(p.city||p.name)+'</b><br>🏳️ '+escapeHtml(p.country)+'<br><small>Bu joy AyubGlobal’da saqlandi.</small>';
+ document.getElementById('status').textContent='Joyingiz belgilandi.';
+}
+map.on('click',e=>choose(e.latlng.lat,e.latlng.lng));
+
+document.getElementById('locate').onclick=()=>{
+ document.getElementById('status').textContent='GPS joylashuv aniqlanmoqda...';
+ map.locate({setView:true,maxZoom:15,enableHighAccuracy:true});
+};
+map.on('locationfound',e=>{
+ L.circleMarker(e.latlng,{radius:9}).addTo(map).bindPopup('📍 Siz shu yerdasiz').openPopup();
+ choose(e.latlng.lat,e.latlng.lng);
+});
+map.on('locationerror',()=>document.getElementById('status').textContent='GPS ishlamadi. Brauzerga joylashuvga ruxsat bering.');
+
+document.getElementById('search').addEventListener('keydown',async e=>{
+ if(e.key!=='Enter')return;
+ const q=e.target.value.trim();if(!q)return;
+ document.getElementById('status').textContent='Qidirilmoqda...';
+ try{
+  const r=await fetch('https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&accept-language=uz&q='+encodeURIComponent(q));
+  const d=await r.json();
+  if(!d.length){document.getElementById('status').textContent='Joy topilmadi.';return}
+  map.setView([+d[0].lat,+d[0].lon],12);
+  choose(+d[0].lat,+d[0].lon);
+ }catch(err){document.getElementById('status').textContent='Qidiruvda xatolik.'}
+});
+</script>
+</body>
+</html>
